@@ -955,8 +955,8 @@ void REEditorUI::keyDown(enumKeyCodes key, double timestamp) {
         }
         auto gameManager = GameManager::get();
         if (key == enumKeyCodes::KEY_F6) {
-            gameManager->toggleGameVariable("0121");
-            auto hideInvisible = gameManager->getGameVariable("0121");
+            gameManager->toggleGameVariable(GameVar::HideInvisible);
+            auto hideInvisible = gameManager->getGameVariable(GameVar::HideInvisible);
 
             std::string str = hideInvisible ? "On" : "Off";
 
@@ -967,10 +967,10 @@ void REEditorUI::keyDown(enumKeyCodes key, double timestamp) {
             return;
         }
         if (key == enumKeyCodes::KEY_F5) {
-            gameManager->toggleGameVariable("0045");
+            gameManager->toggleGameVariable(GameVar::DebugDrawEditor);
             m_editorLayer->updateOptions();
 
-            auto showHitboxes = gameManager->getGameVariable("0045");
+            auto showHitboxes = gameManager->getGameVariable(GameVar::DebugDrawEditor);
 
             std::string str = showHitboxes ? "On" : "Off";
 
@@ -981,10 +981,10 @@ void REEditorUI::keyDown(enumKeyCodes key, double timestamp) {
             return;
         }
         if (key == enumKeyCodes::KEY_F4) {
-            gameManager->toggleGameVariable("0137");
+            gameManager->toggleGameVariable(GameVar::HideParticleIcons);
             m_editorLayer->updatePreviewParticles();
 
-            auto previewParticles = gameManager->getGameVariable("0137");
+            auto previewParticles = gameManager->getGameVariable(GameVar::HideParticleIcons);
 
             std::string str = previewParticles ? "On" : "Off";
 
@@ -995,10 +995,10 @@ void REEditorUI::keyDown(enumKeyCodes key, double timestamp) {
             return;
         }
         if (key == enumKeyCodes::KEY_F3) {
-            gameManager->toggleGameVariable("0036");
+            gameManager->toggleGameVariable(GameVar::PreviewMode);
             m_editorLayer->updateEditorMode();
 
-            auto previewMode = gameManager->getGameVariable("0036");
+            auto previewMode = gameManager->getGameVariable(GameVar::PreviewMode);
 
             std::string str = previewMode ? "On" : "Off";
 
@@ -1009,11 +1009,11 @@ void REEditorUI::keyDown(enumKeyCodes key, double timestamp) {
             return;
         }
         if (key == enumKeyCodes::KEY_F7) {
-            auto linkControlsToggle = gameManager->getGameVariable("0097");
+            auto linkControlsToggle = gameManager->getGameVariable(GameVar::LinkControls);
             if (!linkControlsToggle) return;
 
-            gameManager->toggleGameVariable("0180");
-            auto linkControlsOff = gameManager->getGameVariable("0180");
+            gameManager->toggleGameVariable(GameVar::LinkControlsQuickToggle);
+            auto linkControlsOff = gameManager->getGameVariable(GameVar::LinkControlsQuickToggle);
             
             m_linkControlsDisabled = linkControlsOff;
 
@@ -1110,8 +1110,26 @@ EditorUI* REEditorUI::getUI() {
 }
 
 void REEditorUI::setIDPopupClosed(SetIDPopup* popup, int value) {
-    //todo
-    EditorUI::setIDPopupClosed(popup, value);
+    auto gameManager = GameManager::get();
+
+    auto tag = popup->getTag();
+    if (tag == 1) {
+        gameManager->setIntGameVariable(GameVar::GroupIDFilter, value);
+        auto str = CCString::createWithFormat("%i", value);
+        m_deleteGroupSprite->setString(str->getCString());
+    } 
+    if (tag == 2) {
+        gameManager->setIntGameVariable(GameVar::ColorIDFilter, value);
+        if (value < 1000) {
+            m_deleteColorSprite->setString(GameToolbox::intToString(value).c_str());
+        }
+        else {
+            m_deleteColorSprite->setString(GJSpecialColorSelect::textForColorIdx(value));
+        }
+    }
+    if (tag == 3) {
+        findAndSelectObject(value, static_cast<FindObjectPopup*>(popup)->m_unknownBool);
+    }
 }
 
 void REEditorUI::FLAlert_Clicked(FLAlertLayer* layer, bool btn2) {
@@ -1147,8 +1165,52 @@ void REEditorUI::FLAlert_Clicked(FLAlertLayer* layer, bool btn2) {
 }
 
 void REEditorUI::updateTransformControl() {
-    //todo
-    EditorUI::updateTransformControl();
+    if (!m_transformControl->isVisible()) return;
+
+    float rotation = 0.f;
+
+    m_transformState.m_scaleX = 1.f;
+    m_transformState.m_scaleY = 1.f;
+    m_transformState.m_angleX = 0.f;
+    m_transformState.m_angleY = 0.f;
+    m_transformState.m_skewX = 0.f;
+    m_transformState.m_skewY = 0.f;
+    m_transformState.m_transformRotationX = 0.f;
+    m_transformState.m_transformRotationY = 0.f;
+    m_transformState.m_transformPosition = CCPoint{0.f, 0.f};
+    m_transformState.m_transformScaleX = 1.f;
+    m_transformState.m_transformScaleY = 1.f;
+
+    if (m_transformState.m_transformReset) {
+        m_transformState.m_transformReset = false;
+
+        if (m_selectedObject) {
+            rotation = m_selectedObject->getRotation();
+        }
+        else if (!m_selectedObject && m_selectedObjects && m_selectedObjects->count() > 0) {
+            rotation = m_selectedObjects->asExt<GameObject>()[0]->getRotation();
+        }
+
+        if (rotation != 0.f) {
+            auto objects = m_selectedObject ? CCArray::createWithObject(m_selectedObject) : m_selectedObjects;
+
+            resetObjectEditorValues_(objects);
+            transformObjects(objects, m_pivotPoint, 1.f, 1.f, -rotation, -rotation, 0.f, 0.f);
+        }
+    }
+
+    m_transformNode->setScaleX(m_transformState.m_transformScaleX);
+    m_transformNode->setScaleY(m_transformState.m_transformScaleY);
+    m_transformNode->setRotationX(m_transformState.m_transformRotationX);
+    m_transformNode->setRotationY(m_transformState.m_transformRotationY);
+    m_transformNode->setSkewX(m_transformState.m_skewX);
+    m_transformNode->setSkewY(m_transformState.m_skewY);
+
+    m_transformControl->loadValues(m_selectedObject, m_selectedObjects, m_objectEditorStates);
+
+    if (rotation != 0.f) {
+        m_transformControl->applyRotation(rotation);
+    }
 }
 
 void REEditorUI::transformChangeBegin() {
@@ -5666,16 +5728,16 @@ void REEditorUI::onUpdateDeleteFilter(CCObject* sender) {
     auto gameManager = GameManager::sharedState();
 
     if (tag >= 0 && tag <= 2) {
-        gameManager->setIntGameVariable("0005", tag);
+        gameManager->setIntGameVariable(GameVar::DeleteFilter, tag);
     }
     else if (tag == 3) {
         auto obj = m_selectedObject;
 
         if (!obj) {
-            gameManager->setIntGameVariable("0005", 0);
+            gameManager->setIntGameVariable(GameVar::DeleteFilter, 0);
         } else {
-            gameManager->setIntGameVariable("0005", 3);
-            gameManager->setIntGameVariable("0006", obj->m_objectID);
+            gameManager->setIntGameVariable(GameVar::DeleteFilter, 3);
+            gameManager->setIntGameVariable(GameVar::CustomDeleteFilter, obj->m_objectID);
         }
     }
 
@@ -10472,8 +10534,116 @@ void REEditorUI::toggleSwipe(CCObject* sender) {
 }
 
 void REEditorUI::transformObject(GameObject* object, EditCommand command, bool noOffset) {
-    //todo
-    EditorUI::transformObject(object, command, noOffset);
+    float rotX = object->getRotationX();
+    float rotY = object->getRotationY();
+    float rot = object->getRotation();
+
+    bool isSpecial = isSpecialSnapObject(object->m_objectID);
+    bool isFlipCommand = command == EditCommand::FlipX || command == EditCommand::FlipY;
+    bool rotationNotMultipleOf90 = static_cast<int>(std::abs(rot)) % 90 != 0;
+    bool isRotateSnap = command == EditCommand::RotateSnap;
+    bool skipOffset = noOffset || (isSpecial && isFlipCommand) || rotationNotMultipleOf90 || isRotateSnap;
+
+    if (!skipOffset) removeOffset(object);
+
+    bool xyDifferent = (rotX != rotY);
+    bool needsAxisBasedRotationFix = false;
+
+    if (!xyDifferent) {
+        needsAxisBasedRotationFix = (rot != 90.0f && rot != 270.0f);
+    }
+    else {
+        needsAxisBasedRotationFix = (static_cast<int>(std::abs(rot)) % 90 != 0);
+    }
+
+    EditCommand effectiveCommand = command;
+
+    if (!xyDifferent) {
+        if (command == EditCommand::FlipX) {
+            effectiveCommand = EditCommand::FlipY;
+        }
+        else if (command == EditCommand::FlipY) {
+            effectiveCommand = EditCommand::FlipX;
+        }
+    }
+
+    switch (effectiveCommand) {
+        case EditCommand::FlipX: {
+            bool flag = object->isFlipX();
+            object->setFlipX(!flag);
+            break;
+        }
+
+        case EditCommand::FlipY: {
+            bool flag = object->isFlipY();
+            object->setFlipY(!flag);
+
+            if (needsAxisBasedRotationFix) {
+                if (rotX == rotY) {
+                    object->setRotation(-rot);
+                }
+                else {
+                    object->setRotationX(-rotX);
+                    object->setRotationY(-rotY);
+                }
+            }
+
+            if (object->m_updateCustomContentSize) {
+                object->setObjectRectDirty(true);
+            }
+            break;
+        }
+
+        case EditCommand::RotateCW:
+        case EditCommand::RotateCCW:
+        case EditCommand::RotateCW45:
+        case EditCommand::RotateCCW45: {
+            auto delta = rotationforCommand_(command);
+
+            object->setRotationX(rotX + delta);
+            object->setRotationY(rotY + delta);
+
+            if (std::abs(object->getRotationX()) == 360.0f) {
+                object->setRotationX(0.0f);
+            }
+
+            if (std::abs(object->getRotationY()) == 360.0f) {
+                object->setRotationY(0.0f);
+            }
+            break;
+        }
+
+        case EditCommand::RotateSnap: {
+            float snapAngle = getSnapAngle_(object, nullptr);
+
+            if (snapAngle != -1.0f) {
+                rotateObjects(m_selectedObjects, snapAngle, {});
+            }
+            break;
+        }
+        default: break;
+    }
+
+    if (rotX == rotY) {
+        if (std::abs(rot) > 360.0f) {
+            object->setRotation(static_cast<float>(static_cast<int>(rot) % 360));
+        }
+    }
+    else {
+        if (std::abs(rotX) > 360.0f) {
+            object->setRotationX(static_cast<float>(static_cast<int>(rotX) % 360));
+        }
+
+        if (std::abs(rotY) > 360.0f) {
+            object->setRotationY(static_cast<float>(static_cast<int>(rotY) % 360));
+        }
+    }
+
+    if (!skipOffset) applyOffset(object);
+
+    if (m_refreshPosition) {
+        moveObject(object, {0, 0});
+    }
 }
 
 void REEditorUI::transformObjectCall(EditCommand command) {
@@ -10486,8 +10656,57 @@ void REEditorUI::transformObjectCall(CCObject* sender) {
 }
 
 void REEditorUI::transformObjects(CCArray* objs, CCPoint anchor, float scaleX, float scaleY, float rotateX, float rotateY, float warpX, float warpY) {
-    //todo
-    EditorUI::transformObjects(objs, anchor, scaleX, scaleY, rotateX, rotateY, warpX, warpY);
+    if (anchor.equals({0, 0})) {
+        anchor = getGroupCenter(m_selectedObjects, false);
+    }
+
+    auto pos = m_editorLayer->m_objectLayer->getPosition();
+    auto scale = m_editorLayer->m_objectLayer->getScale();
+
+    m_editorLayer->m_objectLayer->setScale(1);
+    m_editorLayer->m_objectLayer->setPosition({0, 0});
+
+    m_transformNode->setPosition(anchor);
+    m_transformNode->setScaleX(scaleX);
+    m_transformNode->setScaleY(scaleY);
+    m_transformNode->setRotationX(rotateX);
+    m_transformNode->setRotationY(rotateY);
+    m_transformNode->setSkewX(warpX);
+    m_transformNode->setSkewY(warpY);
+
+    m_transformNode->nodeToWorldTransform();
+
+    for (auto obj : CCArrayExt<GameObject, false>(objs)) {
+        auto& state = m_objectEditorStates[obj->m_uniqueID];
+
+        m_transformChild->setPosition(state.m_position - anchor);
+        m_transformChild->setScaleX(obj->m_pixelScaleX * state.m_scaleX);
+        m_transformChild->setScaleY(obj->m_pixelScaleY * state.m_scaleY);
+        m_transformChild->setRotationX(state.m_rotationX);
+        m_transformChild->setRotationY(state.m_rotationY);
+
+        auto t = m_transformChild->nodeToWorldTransform();
+
+        float xLenSq = t.c * t.c + t.d * t.d;
+        float yLenSq = t.a * t.a + t.b * t.b;
+
+        float scaleOutX = std::sqrtf(xLenSq);
+        float scaleOutY = std::sqrtf(yLenSq);
+
+        float rotXOut = std::atan2f(t.b, t.a);
+        float rotYOut = std::atan2f(t.d, t.c);
+
+        obj->updateCustomScaleX(scaleOutX);
+        obj->updateCustomScaleY(scaleOutY);
+
+        obj->setRotationX(-(rotXOut * 57.29578f - 90.f));
+        obj->setRotationY(-(rotYOut * 57.29578f));
+
+        moveObject(obj, CCPoint{ t.tx, t.ty } - obj->getPosition());
+    }
+
+    m_editorLayer->m_objectLayer->setScale(scale);
+    m_editorLayer->m_objectLayer->setPosition(pos);
 }
 
 void REEditorUI::transformObjectsActive() {

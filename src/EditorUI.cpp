@@ -1534,6 +1534,56 @@ void REEditorUI::activateTransformControl(CCObject* sender) {
 
 void REEditorUI::addObjectsToSmartTemplate(GJSmartTemplate* smartTemplate, CCArray* objects) {
     //todo
+
+    /*if (!smartTemplate) return;
+
+    auto dict = CCDictionary::create();
+
+    for (int i = 0; i < objects->count(); i++) {
+        auto obj = static_cast<GameObject*>(objects->objectAtIndex(i));
+        if (obj->m_classType == GameObjectClassType::Smart) {
+            if (obj->m_objectID == 0xb50 || obj->m_objectID == 0xb51) {
+                obj->determineSlopeDirection();
+            }
+            if (obj->m_linkedGroup > 0) {
+                dict->setObject(obj, obj->m_linkedGroup);
+            }
+        }
+        else {
+            objects->removeObjectAtIndex(i, true);
+        }
+    }
+
+    bool someBool;
+    int someInt;
+
+    for (int i = 0; i < objects->count(); i++) {
+        auto obj = static_cast<SmartGameObject*>(objects->objectAtIndex(i));
+        if (!obj->m_referenceOnly) {
+            auto pos = CCPoint{0, 0};
+
+            auto type = smartTemplate->smartObjectToType(obj, pos);
+            auto offset = smartTemplate->offsetForType(type);
+
+            auto objPos = obj->getPosition();
+            auto delta = objPos + offset;
+
+            auto somePos = CCPoint{};
+
+            if (delta == CCPoint{0, 0}) {
+                someBool = false;
+                someInt = 1;
+            }
+            else {
+                someBool = true;
+                someInt = 2;
+
+            }
+        }
+
+    }*/
+
+
     EditorUI::addObjectsToSmartTemplate(smartTemplate, objects);
 }
 
@@ -1672,13 +1722,73 @@ void REEditorUI::changeSelectedObjects_(CCArray* objects, bool ignoreFilter) {
 }
 
 CCPoint REEditorUI::checkDiffAfterTransformAnchor(CCPoint diff, CCArray* objects) {
-    //todo
-    return EditorUI::checkDiffAfterTransformAnchor(diff, objects);
+    float oldScale = m_editorLayer->m_objectLayer->getScale();
+    CCPoint oldPosition = m_editorLayer->m_objectLayer->getPosition();
+
+    m_editorLayer->m_objectLayer->setScale(1.0f);
+    m_editorLayer->m_objectLayer->setPosition({0.f, 0.f});
+    m_transformNode->setPosition({0.f, 0.f});
+
+    m_transformNode->setScaleX(m_transformState.m_scaleX);
+    m_transformNode->setScaleY(m_transformState.m_scaleY);
+
+    m_transformNode->setRotationX(m_transformState.m_angleX);
+    m_transformNode->setRotationY(m_transformState.m_angleY);
+
+    m_transformNode->setSkewX(m_transformState.m_skewX);
+    m_transformNode->setSkewY(m_transformState.m_skewY);
+
+    m_transformNode->nodeToWorldTransform();
+
+    m_transformChild->setPosition({0.f, 0.f});
+
+    CCPoint worldOrigin = m_transformNode->convertToWorldSpace({0.f, 0.f});
+    CCPoint worldMoved  = worldOrigin + diff;
+
+    CCPoint localOrigin = m_transformNode->convertToNodeSpace(worldOrigin);
+    CCPoint localMoved  = m_transformNode->convertToNodeSpace(worldMoved);
+
+    CCPoint delta = localMoved - localOrigin;
+
+    for (auto obj : CCArrayExt<GameObject, false>(objects)) {
+        auto& state = m_objectEditorStates[obj->m_uniqueID];
+        state.m_position += delta;
+    }
+
+    m_editorLayer->m_objectLayer->setScale(oldScale);
+    m_editorLayer->m_objectLayer->setPosition(oldPosition);
+
+    return delta;
 }
 
 void REEditorUI::checkLiveColorSelect() {
-    //todo
-    EditorUI::checkLiveColorSelect();
+    if (!m_colorOverlay) {
+        if (!m_hsvOverlay) {
+            return;
+        }
+        closeLiveHSVSelect();
+        editHSV();
+    }
+    else {
+        closeLiveColorSelect();
+        editColor();
+    }
+
+    if (!m_selectedObject) {
+        for (auto obj : CCArrayExt<GameObject, false>(m_selectedObjects)) {
+            obj->selectObject({0, 255, 0});
+        }
+    }
+    else {
+        m_selectedObject->selectObject({0, 255, 0});
+    }
+
+    stopActionByTag(124);
+    auto callFunc = CCCallFunc::create(this, SEL_CallFunc(&EditorUI::deselectObjectsColor));
+    auto delay = CCDelayTime::create(0.1f);
+    auto sequence = CCSequence::create(callFunc, delay, nullptr);
+    sequence->setTag(124);
+    runAction(sequence);
 }
 
 void REEditorUI::clickOnPosition(CCPoint position) {
@@ -2393,8 +2503,158 @@ void REEditorUI::createLoop() {
 }
 
 void REEditorUI::createMoveMenu() {
-    //todo
-    EditorUI::createMoveMenu();
+    auto winSize = CCDirector::get()->getWinSize();
+    auto dict = CCDictionary::create();
+    m_editButtonDict = dict;
+    m_editButtonDict->retain();
+
+    auto btns = CCArray::create();
+    auto upBtn = getSpriteButton_("edit_upBtn_001.png", menu_selector(EditorUI::moveObjectCall), nullptr, 0.9f);
+    upBtn->setTag(3);
+    btns->addObject(upBtn);
+
+    auto downBtn = getSpriteButton_("edit_downBtn_001.png", menu_selector(EditorUI::moveObjectCall), nullptr, 0.9f);
+    downBtn->setTag(4);
+    btns->addObject(downBtn);
+
+    auto leftBtn = getSpriteButton_("edit_leftBtn_001.png", menu_selector(EditorUI::moveObjectCall), nullptr, 0.9f);
+    leftBtn->setTag(1);
+    btns->addObject(leftBtn);
+
+    auto rightBtn = getSpriteButton_("edit_rightBtn_001.png", menu_selector(EditorUI::moveObjectCall), nullptr, 0.9f);
+    rightBtn->setTag(2);
+    btns->addObject(rightBtn);
+
+    auto up2Btn = getSpriteButton_("edit_upBtn2_001.png", menu_selector(EditorUI::moveObjectCall), nullptr, 0.9f);
+    up2Btn->setTag(7);
+    btns->addObject(up2Btn);
+
+    auto down2Btn = getSpriteButton_("edit_downBtn2_001.png", menu_selector(EditorUI::moveObjectCall), nullptr, 0.9f);
+    down2Btn->setTag(8);
+    btns->addObject(down2Btn);
+
+    auto left2Btn = getSpriteButton_("edit_leftBtn2_001.png", menu_selector(EditorUI::moveObjectCall), nullptr, 0.9f);
+    left2Btn->setTag(5);
+    btns->addObject(left2Btn);
+
+    auto right2Btn = getSpriteButton_("edit_rightBtn2_001.png", menu_selector(EditorUI::moveObjectCall), nullptr, 0.9f);
+    right2Btn->setTag(6);
+    btns->addObject(right2Btn);
+
+    auto up3Btn = getSpriteButton_("edit_upBtn3_001.png", menu_selector(EditorUI::moveObjectCall), nullptr, 0.9f);
+    up3Btn->setTag(11);
+    btns->addObject(up3Btn);
+
+    auto down3Btn = getSpriteButton_("edit_downBtn3_001.png", menu_selector(EditorUI::moveObjectCall), nullptr, 0.9f);
+    down3Btn->setTag(12);
+    btns->addObject(down3Btn);
+
+    auto left3Btn = getSpriteButton_("edit_leftBtn3_001.png", menu_selector(EditorUI::moveObjectCall), nullptr, 0.9f);
+    left3Btn->setTag(9);
+    btns->addObject(left3Btn);
+
+    auto right3Btn = getSpriteButton_("edit_rightBtn3_001.png", menu_selector(EditorUI::moveObjectCall), nullptr, 0.9f);
+    right3Btn->setTag(10);
+    btns->addObject(right3Btn);
+
+    auto upSmallBtn = getSpriteButton_("edit_upBtn_001.png", menu_selector(EditorUI::moveObjectCall), nullptr, 0.9f);
+    upSmallBtn->setTag(15);
+    btns->addObject(upSmallBtn);
+
+    auto downSmallBtn = getSpriteButton_("edit_downBtn_001.png", menu_selector(EditorUI::moveObjectCall), nullptr, 0.9f);
+    downSmallBtn->setTag(16);
+    btns->addObject(downSmallBtn);
+
+    auto leftSmallBtn = getSpriteButton_("edit_leftBtn_001.png", menu_selector(EditorUI::moveObjectCall), nullptr, 0.9f);
+    leftSmallBtn->setTag(13);
+    btns->addObject(leftSmallBtn);
+
+    auto rightSmallBtn = getSpriteButton_("edit_rightBtn_001.png", menu_selector(EditorUI::moveObjectCall), nullptr, 0.9f);
+    rightSmallBtn->setTag(14);
+    btns->addObject(rightSmallBtn);
+
+    static_cast<ButtonSprite*>(upSmallBtn->getNormalImage())->m_subSprite->setScale(0.8f);
+    static_cast<ButtonSprite*>(downSmallBtn->getNormalImage())->m_subSprite->setScale(0.8f);
+    static_cast<ButtonSprite*>(leftSmallBtn->getNormalImage())->m_subSprite->setScale(0.8f);
+    static_cast<ButtonSprite*>(rightSmallBtn->getNormalImage())->m_subSprite->setScale(0.8f);
+
+    auto up5Btn = getSpriteButton_("edit_upBtn5_001.png", menu_selector(EditorUI::moveObjectCall), nullptr, 0.9f);
+    up5Btn->setTag(19);
+    btns->addObject(up5Btn);
+
+    auto down5Btn = getSpriteButton_("edit_downBtn5_001.png", menu_selector(EditorUI::moveObjectCall), nullptr, 0.9f);
+    down5Btn->setTag(20);
+    btns->addObject(down5Btn);
+
+    auto left5Btn = getSpriteButton_("edit_leftBtn5_001.png", menu_selector(EditorUI::moveObjectCall), nullptr, 0.9f);
+    left5Btn->setTag(17);
+    btns->addObject(left5Btn);
+
+    auto right5Btn = getSpriteButton_("edit_rightBtn5_001.png", menu_selector(EditorUI::moveObjectCall), nullptr, 0.9f);
+    right5Btn->setTag(18);
+    btns->addObject(right5Btn);
+
+    auto flipXBtn = getSpriteButton_("edit_flipXBtn_001.png", menu_selector(EditorUI::transformObjectCall), nullptr, 0.9f);
+    flipXBtn->setTag(21);
+    btns->addObject(flipXBtn);
+
+    auto flipYBtn = getSpriteButton_("edit_flipYBtn_001.png", menu_selector(EditorUI::transformObjectCall), nullptr, 0.9f);
+    flipYBtn->setTag(22);
+    btns->addObject(flipYBtn);
+
+    auto cwBtn = getSpriteButton_("edit_cwBtn_001.png", menu_selector(EditorUI::transformObjectCall), nullptr, 0.9f);
+    cwBtn->setTag(23);
+    btns->addObject(cwBtn);
+
+    auto ccwBtn = getSpriteButton_("edit_ccwBtn_001.png", menu_selector(EditorUI::transformObjectCall), nullptr, 0.9f);
+    ccwBtn->setTag(24);
+    btns->addObject(ccwBtn);
+
+    auto rotate45RBtn = getSpriteButton_("edit_rotate45rBtn_001.png", menu_selector(EditorUI::transformObjectCall), nullptr, 0.9f);
+    rotate45RBtn->setTag(25);
+    btns->addObject(rotate45RBtn);
+    m_editButtonDict->setObject(rotate45RBtn, CCString::createWithFormat("%i", rotate45RBtn->getTag())->getCString());
+
+    auto rotate45LBtn = getSpriteButton_("edit_rotate45lBtn_001.png", menu_selector(EditorUI::transformObjectCall), nullptr, 0.9f);
+    rotate45LBtn->setTag(26);
+    btns->addObject(rotate45LBtn);
+    m_editButtonDict->setObject(rotate45LBtn, CCString::createWithFormat("%i", rotate45LBtn->getTag())->getCString());
+
+    auto freeRotateBtn = getSpriteButton_("edit_freeRotateBtn_001.png", menu_selector(EditorUI::activateRotationControl), nullptr, 0.9f);
+    freeRotateBtn->setTag(27);
+    btns->addObject(freeRotateBtn);
+    m_editButtonDict->setObject(freeRotateBtn, CCString::createWithFormat("%i", freeRotateBtn->getTag())->getCString());
+
+    auto snapRotateBtn = getSpriteButton_("edit_rotateSnapBtn_001.png", menu_selector(EditorUI::transformObjectCall), nullptr, 0.9f);
+    snapRotateBtn->setTag(28);
+    btns->addObject(snapRotateBtn);
+    m_editButtonDict->setObject(snapRotateBtn, CCString::createWithFormat("%i", snapRotateBtn->getTag())->getCString());
+
+    auto scaleBtn = getSpriteButton_("edit_scaleBtn_001.png", menu_selector(EditorUI::activateScaleControl), nullptr, 0.9f);
+    scaleBtn->setTag(29);
+    btns->addObject(scaleBtn);
+    m_editButtonDict->setObject(scaleBtn, CCString::createWithFormat("%i", scaleBtn->getTag())->getCString());
+
+    auto scaleXYBtn = getSpriteButton_("edit_scaleXYBtn_001.png", menu_selector(EditorUI::activateScaleControl), nullptr, 0.9f);
+    scaleXYBtn->setTag(30);
+    btns->addObject(scaleXYBtn);
+    m_editButtonDict->setObject(scaleXYBtn, CCString::createWithFormat("%i", scaleXYBtn->getTag())->getCString());
+
+    auto warpBtn = getSpriteButton_("edit_warpBtn_001.png", menu_selector(EditorUI::activateTransformControl), nullptr, 0.9f);
+    warpBtn->setTag(30);
+    btns->addObject(warpBtn);
+    m_editButtonDict->setObject(warpBtn, CCString::createWithFormat("%i", warpBtn->getTag())->getCString());
+
+    auto gameManager = GameManager::get();
+
+    auto buttonsPerRow = gameManager->getIntGameVariable(GameVar::EditorButtonsPerRow);
+    auto rows = gameManager->getIntGameVariable(GameVar::EditorButtonRows);
+
+    auto screenBottom = CCDirector::get()->getScreenBottom();
+    auto point = CCPoint{winSize.width / 2 - 5.f, screenBottom + m_toolbarHeight - 6.f};
+
+    m_editButtonBar = EditButtonBar::create(btns, point, 0, false, buttonsPerRow, rows);
+    addChild(m_editButtonBar, 10);
 }
 
 void REEditorUI::createNewKeyframeAnim() {

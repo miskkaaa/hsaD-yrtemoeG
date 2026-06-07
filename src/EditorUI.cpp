@@ -1,4 +1,8 @@
 #include "EditorUI.hpp"
+#include "Geode/cocos/cocoa/CCArray.h"
+#include "Geode/loader/Log.hpp"
+#include <Geode/Enums.hpp>
+#include <Geode/binding/UndoObject.hpp>
 
 uint64_t REEditorUI::s_rngSeed = 0;
 
@@ -2747,14 +2751,48 @@ void REEditorUI::createSmartObjectsFromType(int type, CCArray* objects, bool ext
     EditorUI::createSmartObjectsFromType(type, objects, extras, dontDelete);
 }
 
-UndoObject* REEditorUI::createUndoObject(UndoCommand command, bool addToList) {
+UndoObject* REEditorUI::createUndoObject(UndoCommand command, bool addToList) { // FIX BINDINGS this should probably be dontAddToList or something
     //todo
     return EditorUI::createUndoObject(command, addToList);
+    
+    /*UndoObject* undoObject;
+    if (m_selectedObjects->count() == 0) {
+        undoObject = UndoObject::create(m_selectedObject, command);
+    }
+    else {
+        undoObject = UndoObject::createWithArray(m_selectedObjects, command);
+    }
+
+    if (m_transformControl->isVisible()) {
+        auto& state = getTransformState_();
+        undoObject->m_transformState.m_transformReset = state.m_transformReset;
+        undoObject->m_transformState.m_transformScaleX = state.m_transformScaleX;
+
+        undoObject->m_transformState.m_transformScaleY = state.m_transformScaleY;
+        undoObject->m_transformState.m_angleX = state.m_angleX;
+        undoObject->m_transformState.m_angleY = state.m_angleY;
+        undoObject->m_transformState.m_skewX = state.m_skewX;
+        undoObject->m_transformState.m_skewY = state.m_skewY;
+        undoObject->m_transformState.m_transformRotation = state.m_transformRotation;
+        undoObject->m_transformState.m_transformRotationX = state.m_transformRotationX;
+        undoObject->m_transformState.m_transformRotationY = state.m_transformRotationY;
+        undoObject->m_transformState.m_transformPosition = state.m_transformPosition;
+        undoObject->m_transformState.m_transformSkewX = state.m_transformSkewX;
+        undoObject->m_transformState.m_transformSkewY = state.m_transformSkewY;
+        undoObject->m_transformState.m_transformScaleX = state.m_transformScaleX;
+        undoObject->m_transformState.m_transformScaleY = state.m_transformScaleY;
+        undoObject->m_undoTransform = true;
+    }
+    if (!addToList) {
+        m_editorLayer->addToUndoList(undoObject, false);
+    }
+    return undoObject;*/
 }
 
 void REEditorUI::createUndoSelectObject(bool redo) {
-    //todo
-    EditorUI::createUndoSelectObject(redo);
+    auto undoObject = UndoObject::createWithArray(getSelectedObjects(), UndoCommand::Select);
+    undoObject->m_redo = redo;
+    m_editorLayer->addToUndoList(undoObject, false);
 }
 
 void REEditorUI::deactivateRotationControl_() {
@@ -3712,8 +3750,18 @@ void REEditorUI::findSnapObject(CCArray* objects, float offset) {
 }
 
 void REEditorUI::findSnapObject(CCPoint position, float offset) {
-    //todo
-    EditorUI::findSnapObject(position, offset);
+    auto objects = CCArray::create();
+    if (m_selectedObjects->count() != 0) {
+        for (auto obj : CCArrayExt<GameObject, false>(m_selectedObjects)) {
+            auto rect = m_editorLayer->getObjectRect(obj, false, false);
+            rect = m_editorLayer->getObjectRect(obj, false, false);
+            if (rect.containsPoint(position)) {
+                objects->addObject(obj);
+            }
+        }
+    }
+
+    findSnapObject(objects, offset);
 }
 
 void REEditorUI::findTriggerTest_() {
@@ -3722,13 +3770,60 @@ void REEditorUI::findTriggerTest_() {
 }
 
 void REEditorUI::flipObjectsX(CCArray* objects) {
-    //todo
-    EditorUI::flipObjectsX(objects);
+    float maxX = -9999.f;
+    float minX = 9999.f;
+
+    for (auto obj : CCArrayExt<GameObject, false>(objects)) {
+        obj->updateStartPos();
+        auto rect = obj->getObjectRect(1.f, 1.f);
+
+
+        float objMaxX = rect.getMaxX();
+        float objMinX = rect.getMinX();
+
+        maxX = std::max(maxX, objMaxX);
+        minX = std::min(minX, objMinX);
+
+        transformObject(obj, EditCommand::FlipX, true);
+    }
+
+    for (auto obj : CCArrayExt<GameObject, false>(objects)) {
+        auto pos = obj->getPosition();
+
+        float newX = maxX - (pos.x - minX);
+        auto newPos = CCPoint{newX, pos.y};
+
+        auto delta = newPos - pos;
+        moveObject(obj, delta);
+    }
 }
 
 void REEditorUI::flipObjectsY(CCArray* objects) {
-    //todo
-    EditorUI::flipObjectsY(objects);
+    float maxY = -9999.f;
+    float minY = 9999.f;
+
+    for (auto obj : CCArrayExt<GameObject, false>(objects)) {
+        obj->updateStartPos();
+        auto rect = obj->getObjectRect(1.f, 1.f);
+
+        float objMaxY = rect.getMaxY();
+        float objMinY = rect.getMinY();
+
+        maxY = std::max(maxY, objMaxY);
+        minY = std::min(minY, objMinY);
+
+        transformObject(obj, EditCommand::FlipY, true);
+    }
+
+    for (auto obj : CCArrayExt<GameObject, false>(objects)) {
+        auto pos = obj->getPosition();
+
+        float newY = maxY - (pos.y - minY);
+        auto newPos = CCPoint{pos.x, newY};
+
+        auto delta = newPos - pos;
+        moveObject(obj, delta);
+    }
 }
 
 CCMenuItemSpriteExtra* REEditorUI::getButton_(char const* text, int width, SEL_MenuHandler selector, CCMenu* menu) {
@@ -10809,7 +10904,9 @@ void REEditorUI::transformObject(GameObject* object, EditCommand command, bool n
     bool xyDifferent = (rotX != rotY);
     bool needsAxisBasedRotationFix = false;
 
-    if (!xyDifferent) {
+    log::info("roxX: {}, rotY: {}", rotX, rotY);
+
+    if (xyDifferent) {
         needsAxisBasedRotationFix = (rot != 90.0f && rot != 270.0f);
     }
     else {
@@ -10818,7 +10915,9 @@ void REEditorUI::transformObject(GameObject* object, EditCommand command, bool n
 
     EditCommand effectiveCommand = command;
 
-    if (!xyDifferent) {
+    log::info("command: {}", static_cast<int>(effectiveCommand));
+
+    if (xyDifferent) {
         if (command == EditCommand::FlipX) {
             effectiveCommand = EditCommand::FlipY;
         }
@@ -10826,6 +10925,8 @@ void REEditorUI::transformObject(GameObject* object, EditCommand command, bool n
             effectiveCommand = EditCommand::FlipX;
         }
     }
+
+    log::info("command after: {}", static_cast<int>(effectiveCommand));
 
     switch (effectiveCommand) {
         case EditCommand::FlipX: {
@@ -10916,7 +11017,10 @@ void REEditorUI::transformObjectCall(CCObject* sender) {
 }
 
 void REEditorUI::transformObjects(CCArray* objs, CCPoint anchor, float scaleX, float scaleY, float rotateX, float rotateY, float warpX, float warpY) {
-    if (anchor.equals({0, 0})) {
+    //todo
+    EditorUI::transformObjects(objs, anchor, scaleX, scaleY, rotateX, rotateY, warpX, warpY);
+    
+    /*if (anchor.equals({0, 0})) {
         anchor = getGroupCenter(m_selectedObjects, false);
     }
 
@@ -10966,7 +11070,7 @@ void REEditorUI::transformObjects(CCArray* objs, CCPoint anchor, float scaleX, f
     }
 
     m_editorLayer->m_objectLayer->setScale(scale);
-    m_editorLayer->m_objectLayer->setPosition(pos);
+    m_editorLayer->m_objectLayer->setPosition(pos);*/
 }
 
 void REEditorUI::transformObjectsActive() {

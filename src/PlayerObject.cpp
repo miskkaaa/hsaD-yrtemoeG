@@ -127,9 +127,8 @@ void REPlayerObject::update(float dt) {
                     float rotateScale = m_vehicleSize == 1 ? 0.43333334f : 0.33333334f;
                     int orientationSign = m_isSideways ? -1 : 1;
                     int rotationDirectionDegrees = m_isGoingLeft ? -180 : 180;
-                    int gravitySign = m_isUpsideDown ? -1 : 1;
 
-                    m_rotateSpeed = (rotationDirectionDegrees * gravitySign) * orientationSign * m_gravityMod / rotateScale;
+                    m_rotateSpeed = (rotationDirectionDegrees * flipMod()) * orientationSign * m_gravityMod / rotateScale;
                     m_isRotating = true;
                 }
             }
@@ -168,10 +167,9 @@ void REPlayerObject::update(float dt) {
             }
         }
         else if (m_isDart) {
-            int gravityDirectionSign = m_isUpsideDown ? -1 : 1;
             int bufferSign = m_jumpBuffered ? 1 : -1;
 
-            yOffset = std::abs(xOffset) * gravityDirectionSign * bufferSign;
+            yOffset = std::abs(xOffset) * flipMod() * bufferSign;
             if (m_vehicleSize != 1) {
                 yOffset = yOffset + yOffset;
             }
@@ -707,7 +705,7 @@ void REPlayerObject::setPosition(cocos2d::CCPoint const& position) {
         
         m_vehicleGroundParticles->setPosition(position + offset);
         m_vehicleGroundParticles->update(0);
-        m_vehicleGroundParticles->setGravity({-350.f, m_isUpsideDown ? 300.f : -300.f});
+        m_vehicleGroundParticles->setGravity({-350.f, flipMod() * -300.f});
         m_vehicleGroundParticles->setRotation(m_isSideways ? 90.f : 0.f);
     }
 
@@ -1180,7 +1178,7 @@ void REPlayerObject::boostPlayer(float yVelocity) {
             m_isBallRotating = false;
 
             float rotationDivisor = m_vehicleSize == 1.f ? 0.8666667f : 0.6666667f;
-            int rotationDegrees = m_isUpsideDown ? 180 : -180;
+            int rotationDegrees = flipMod() * -180;
 
             m_rotationSpeed = rotationDegrees / rotationDivisor;
             m_isRotating = true;
@@ -1306,7 +1304,7 @@ void REPlayerObject::checkSnapJumpToObject(GameObject* object) {
             midX = 90.f;
         }
 
-        int gravitySign = m_isUpsideDown ? -1 : 1;
+        int gravitySign = flipMod();
 
         bool matchesNear = std::abs(objectPosition.x - (snappedPosition.x + nearX)) <= tolerance && std::abs(objectPosition.y - (snappedPosition.y + gravitySign * 30.f)) <= tolerance;
         bool matchesFar = std::abs(objectPosition.x - (snappedPosition.x + farX)) <= tolerance && std::abs(objectPosition.y - (snappedPosition.y - gravitySign * 30.f)) <= tolerance;
@@ -1591,9 +1589,7 @@ void REPlayerObject::didHitHead() {
     if (m_stateFlipGravity <= 0) return;
     
     flipGravity(!m_isUpsideDown, true);
-
-    int yVelocity = m_isUpsideDown ? 2 : -2;
-    setYVelocity(static_cast<double>(yVelocity), 1);
+    setYVelocity(flipMod() * -2, 1);
 
     m_maybeIsBoosted = true;
     m_isOnGround2 = false;
@@ -1742,7 +1738,7 @@ void REPlayerObject::enablePlayerControls() {
                 m_maybeSlopeForce = 0.0;
             }
 
-            if (!(m_platformerXVelocity < 0.0) && m_platformerXVelocity != 0.0) {
+            if (m_platformerXVelocity > 0.0) {
                 m_isMoving = false;
             }
         }
@@ -1762,7 +1758,7 @@ void REPlayerObject::enablePlayerControls() {
                 m_maybeSlopeForce = 0.0;
             }
 
-            if (!(m_platformerXVelocity > 0.0) && m_platformerXVelocity != 0.0) {
+            if (m_platformerXVelocity < 0.0) {
                 m_isMoving = false;
             }
         }
@@ -2592,12 +2588,8 @@ bool REPlayerObject::preSlopeCollision(float dt, GameObject* object) {
     auto slopeRect = object->getObjectRect();
     auto playerRect = getObjectRect();
 
-    auto slopeDirection = object->m_slopeDirection;
-
-    bool checksLeftEdge = (slopeDirection >= 2 && slopeDirection <= 4) || slopeDirection == 6;
-
-    //todo cleanup
-    bool checksTopEdge = slopeDirection < 7 && ((0x6aU >> (slopeDirection & 0x1f)) & 1) != 0;
+    bool checksLeftEdge = (object->m_slopeDirection >= 2 && object->m_slopeDirection <= 4) || object->m_slopeDirection == 6;
+    bool checksTopEdge = object->m_slopeDirection == 1 || object->m_slopeDirection == 3 || object->m_slopeDirection == 5 || object->m_slopeDirection == 6;
 
     float slopeInset = 0.f;
     if (m_isPlatformer && (m_isOnSlope || m_wasOnSlope)) {
@@ -2679,18 +2671,18 @@ bool REPlayerObject::preSlopeCollision(float dt, GameObject* object) {
 
         auto currentSlope = m_currentPotentialSlope;
         if (currentSlope) {
-            //todo cleanup
-            bool currentIsPreferred = (!currentSlope->m_slopeUphill || (currentSlope->m_slopeDirection < 7 && ((0x6aU >> (currentSlope->m_slopeDirection & 0x1f)) & 1) != 0));
 
-            bool objectIsPreferred = (!object->m_slopeUphill || (object->m_slopeDirection < 7 && ((0x6aU >> (object->m_slopeDirection & 0x1f)) & 1) != 0));
+            bool checksTopEdgeCurrent = currentSlope->m_slopeDirection == 1 || currentSlope->m_slopeDirection == 3 || currentSlope->m_slopeDirection == 5 || currentSlope->m_slopeDirection == 6;
+            bool currentIsPreferred = (!currentSlope->m_slopeUphill || checksTopEdgeCurrent);
+
+            bool objectIsPreferred = (!object->m_slopeUphill || checksTopEdge);
 
             if (currentIsPreferred && objectIsPreferred) {
                 if (object->getPosition().x > currentSlope->getPosition().x) {
                     m_currentPotentialSlope = object;
                 }
             }
-            //todo cleanup
-            else if (currentSlope->m_slopeUphill && !(currentSlope->m_slopeDirection < 7 && ((0x6aU >> (currentSlope->m_slopeDirection & 0x1f)) & 1) != 0) && object->getPosition().x > currentSlope->getPosition().x) {
+            else if (currentSlope->m_slopeUphill && !checksTopEdgeCurrent && object->getPosition().x > currentSlope->getPosition().x) {
                 m_currentPotentialSlope = object;
             }
         }
@@ -2715,9 +2707,8 @@ void REPlayerObject::propellPlayer(float yVelocity, bool noEffects, int objectTy
     m_wasOnSlope = false;
 
     float sizeScale = m_vehicleSize == 1.f ? 1.f : 0.8f;
-    int gravitySign = m_isUpsideDown ? -1 : 1;
 
-    setYVelocity(static_cast<double>(gravitySign * yVelocity * 16.f * sizeScale), 0);
+    setYVelocity(static_cast<double>(flipMod() * yVelocity * 16.f * sizeScale), 0);
 
     if (m_isBall || m_isSpider || m_isSwing) {
         m_yVelocity *= 0.6;
@@ -2997,7 +2988,7 @@ bool REPlayerObject::releaseButton(PlayerButton button) {
     if (button == PlayerButton::Left) {
         m_holdingLeft = false;
 
-        if (!(m_platformerXVelocity > 0.0) && m_platformerXVelocity != 0.0) {
+        if (m_platformerXVelocity < 0.0) {
             m_isMoving = false;
         }
 
@@ -3007,7 +2998,7 @@ bool REPlayerObject::releaseButton(PlayerButton button) {
     if (button == PlayerButton::Right) {
         m_holdingRight = false;
 
-        if (!(m_platformerXVelocity < 0.0) && m_platformerXVelocity != 0.0) {
+        if (m_platformerXVelocity > 0.0) {
             m_isMoving = false;
         }
 
@@ -3403,10 +3394,7 @@ void REPlayerObject::runBallRotation(float speed) {
         speedScale = 0.5409375f;
     }
 
-    int gravitySign = m_isUpsideDown ? -1 : 1;
-    int directionSign = m_isGoingLeft ? -1 : 1;
-
-    float rotationSpeed = (120.f * gravitySign * directionSign) / (sizeScale * 0.2f * speedScale);
+    float rotationSpeed = (120.f * flipMod() * reverseMod()) / (sizeScale * 0.2f * speedScale);
 
     if (m_isSideways) {
         rotationSpeed = -rotationSpeed;
@@ -3435,11 +3423,8 @@ void REPlayerObject::runBallRotation2() {
         speedScale = 0.5409375f;
     }
 
-    int gravitySign = m_isUpsideDown ? 1 : -1;
-    int directionSign = m_isGoingLeft ? -1 : 1;
-
     m_isBallRotating2 = true;
-    m_rotationSpeed = ((340.f * gravitySign * directionSign) * m_gravityMod) / (sizeScale * 0.8f * speedScale);
+    m_rotationSpeed = ((340.f * -flipMod() * reverseMod()) * m_gravityMod) / (sizeScale * 0.8f * speedScale);
 }
 
 void REPlayerObject::runNormalRotation_() {
@@ -3453,12 +3438,10 @@ void REPlayerObject::runNormalRotation(bool notNormalMode, float speed) {
     
     float sizeScale = m_vehicleSize == 1.f ? 0.43333334f : 0.33333334f;
 
-    int gravitySign = m_isUpsideDown ? -180 : 180;
-    int directionSign = m_isGoingLeft ? -1 : 1;
     int sidewaysSign = m_isSideways ? -1 : 1;
 
     m_isRotating = true;
-    m_rotationSpeed = ((gravitySign * directionSign) * sidewaysSign * m_gravityMod * speed) / sizeScale;
+    m_rotationSpeed = (((flipMod() * 180) * reverseMod()) * sidewaysSign * m_gravityMod * speed) / sizeScale;
 }
 
 void REPlayerObject::runRotateAction_(bool ground, int type) {
@@ -3931,7 +3914,7 @@ bool REPlayerObject::switchedDirTo(PlayerButton button) {
             m_maybeSlopeForce = 0.0;
         }
 
-        if (!(m_platformerXVelocity > 0.0) && m_platformerXVelocity != 0.0) {
+        if (m_platformerXVelocity < 0.0) {
             m_isMoving = false;
         }
     }
@@ -3944,7 +3927,7 @@ bool REPlayerObject::switchedDirTo(PlayerButton button) {
             m_maybeSlopeForce = 0.0;
         }
 
-        if (!(m_platformerXVelocity < 0.0) && m_platformerXVelocity != 0.0) {
+        if (m_platformerXVelocity > 0.0) {
             m_isMoving = false;
         }
     }
@@ -5010,7 +4993,7 @@ void REPlayerObject::updateCollide(PlayerCollisionDirection direction, GameObjec
     }
 
     int objectId = object ? object->m_uniqueID : 0;
-    int gravitySign = m_isUpsideDown ? -1 : 1;
+    int gravitySign = flipMod();
 
     if (direction == PlayerCollisionDirection::Top) {
         double collideY = position.y + gravitySign * halfHeight;

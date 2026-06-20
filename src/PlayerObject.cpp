@@ -121,7 +121,7 @@ void REPlayerObject::update(float dt) {
                     m_affectedByForces = true;
                 }
 
-                bool canAutoRotate = !m_isShip && !m_isBird && !m_isDart && !m_isSwing && !m_isBall && !m_isRobot && !m_isSpider && !m_isRotating && std::abs(modeForceScale) > 0.1;
+                bool canAutoRotate = isInNormalMode() && !m_isRotating && std::abs(modeForceScale) > 0.1;
 
                 if (canAutoRotate) {
                     float rotateScale = m_vehicleSize == 1 ? 0.43333334f : 0.33333334f;
@@ -250,7 +250,7 @@ void REPlayerObject::update(float dt) {
     bool active = !m_isLocked && !m_isHidden;
     bool moving = !m_isPlatformer || m_holdingLeft || m_holdingRight || m_platformerMovingLeft || m_platformerMovingRight;
 
-    if (!m_isDart && (m_isBird || m_isSwing || m_isShip) && m_isOnGround2 && m_yVelocity * flipMod() > -1 && active && moving) {
+    if (!m_isDart && (isFlying()) && m_isOnGround2 && m_yVelocity * flipMod() > -1 && active && moving) {
         m_vehicleGroundParticles->resumeSystem();
     }
     else {
@@ -795,7 +795,9 @@ void REPlayerObject::setRotation(float rotation) {
             m_particle->setRotation(rotation);
         }
 
-        m_isRotationAligned = (rotation == 90 || rotation == -90 || rotation == 270 || rotation == -270);
+        float rotationAbs = std::abs(rotation);
+
+        m_isRotationAligned = rotationAbs == 90 || rotationAbs == 270;
     }
 }
 
@@ -1112,9 +1114,7 @@ void REPlayerObject::addToYVelocity_(double yVelocity, int type) {
 void REPlayerObject::animatePlatformerJump(float scale) {
     bool noInput = !m_holdingLeft && !m_holdingRight && !m_platformerMovingLeft && !m_platformerMovingRight;
 
-    bool allowedVehicle = !m_isShip && !m_isBird && !m_isDart && !m_isSwing && !m_isBall && !m_isRobot && !m_isSpider;
-
-    if (!noInput || !allowedVehicle) return;
+    if (!noInput || !isInNormalMode()) return;
 
     int rotation = static_cast<int>(getRotation());
     if (rotation < 0) rotation += 360;
@@ -1171,9 +1171,7 @@ void REPlayerObject::boostPlayer(float yVelocity) {
     m_yVelocity = yVel;
 
     if (!m_isDashing) {
-        bool isCube = !m_isShip && !m_isBird && !m_isDart && !m_isSwing && !m_isBall && !m_isRobot && !m_isSpider;
-
-        if (isCube) {
+        if (isInNormalMode()) {
             m_isBallRotating2 = false;
             m_isBallRotating = false;
 
@@ -1236,9 +1234,7 @@ void REPlayerObject::bumpPlayer(float bumpMod, int objectType, bool noEffects, G
         m_gameLayer->gameEventTriggered(GJGameEvent::SpiderTeleport, 0, m_uniqueID);
     }
 
-    bool isCubeLike = !m_isShip && !m_isBird && !m_isDart && !m_isSwing && !m_isBall && !m_isSpider;
-
-    if (isCubeLike) {
+    if (isInBasicMode()) {
         float rotation;
 
         if (!m_isSideways) {
@@ -1251,7 +1247,7 @@ void REPlayerObject::bumpPlayer(float bumpMod, int objectType, bool noEffects, G
         setRotation(rotation);
     }
 
-    playBumpEffect(0x2c, nullptr);
+    playBumpEffect(44, nullptr);
 }
 
 bool REPlayerObject::buttonDown_(PlayerButton button) {
@@ -1582,7 +1578,7 @@ void REPlayerObject::deactivateStreak_(bool stop) {
 }
 
 bool REPlayerObject::destroyFromHitHead_() {
-    return !isFlying() && !m_isBall && !m_isSpider && m_stateHitHead < 1;
+    return isInBasicMode() && m_stateHitHead < 1;
 }
 
 void REPlayerObject::didHitHead() {
@@ -2090,9 +2086,7 @@ bool REPlayerObject::isSafeSpiderFlip_(float flipTime) {
 void REPlayerObject::levelFlipFinished() {
     m_trailingParticles->setLife(m_trailingParticleLife);
 
-    bool alwaysUsesStreak = m_isShip || m_isBird || m_isDart || m_isSwing;
-
-    if (alwaysUsesStreak || m_alwaysShowStreak) {
+    if (isFlying() || m_alwaysShowStreak) {
         resetStreak();
         activateStreak();
 
@@ -2123,12 +2117,7 @@ void REPlayerObject::levelWillFlip() {
 void REPlayerObject::limitDashRotation_(float& rotation) {
     float offset;
     if (m_isSideways) {
-        if (m_isGoingLeft) {
-            offset = 90.f;
-        }
-        else {
-            offset = -90.f;
-        }
+        offset = m_isGoingLeft ? 90.f : -90.f;
         rotation += offset;
         if (rotation > 180.f) {
             rotation -= 360.f;
@@ -2519,13 +2508,13 @@ void REPlayerObject::playingEndEffect_() {
 void REPlayerObject::playSpawnEffect() {
     if (m_isBeingSpawnedByDualPortal) return;
 
-    stopActionByTag(0xB);
+    stopActionByTag(11);
 
     auto blink = CCBlink::create(0.4f, 4);
     auto show = CCShow::create();
     auto sequence = CCSequence::create(blink, show, nullptr);
 
-    sequence->setTag(0xB);
+    sequence->setTag(11);
     runAction(sequence);
 
     auto gameManager = GameManager::get();
@@ -2831,11 +2820,11 @@ void REPlayerObject::redirectDash_(float rotation) {
     if (!m_isDashing) return;
 
     auto dashPos = CCPoint{ static_cast<float>(m_dashX), static_cast<float>(m_dashY)};
-    auto direction = GJBaseGameLayer::convertToClosestDirection(rotation * (M_PI / 180.f) - atan2f(dashPos.y, dashPos.x), M_PI);
+    auto direction = GJBaseGameLayer::convertToClosestDirection(rotation * (M_PI / 180.f) - std::atan2f(dashPos.y, dashPos.x), M_PI);
     
     if (direction != 0.f) {
-        auto cosDir = cosf(direction);
-        auto sinDir = sinf(direction);
+        auto cosDir = std::cosf(direction);
+        auto sinDir = std::sinf(direction);
         dashPos.x = dashPos.x * cosDir - dashPos.y * sinDir;
         dashPos.y = dashPos.x * sinDir + dashPos.y * cosDir;
     }
@@ -3284,9 +3273,9 @@ void REPlayerObject::rotateGameplay(int moveDirection, int groundDirection, bool
             m_affectedByForces = false;
         }
 
-        bool canResetRotation = !m_isShip && !m_isBird && !m_isDart && !m_isSwing && !m_isBall && !m_isRobot && !m_isSpider && !m_isRotating && !m_isLocked && !m_isDashing;
+        bool canResetRotation = isInNormalMode() && !m_isRotating && !m_isLocked && !m_isDashing;
 
-        if (canResetRotation || (m_isDashing == false && (m_isShip || m_isBird || m_isDart || m_isSwing || m_isBall || m_isRobot || m_isSpider || m_isRotating || m_isLocked))) {
+        if (canResetRotation || (!m_isDashing && (!isInNormalMode() || m_isRotating || m_isLocked))) {
             m_isRotating = false;
             m_isBallRotating2 = false;
             m_isBallRotating = false;
@@ -3523,7 +3512,7 @@ void REPlayerObject::setupStreak() {
         m_regularTrail->enableRepeatMode(0.1f);
     }
 
-    *reinterpret_cast<float*>(reinterpret_cast<uintptr_t>(m_regularTrail) + 0x1C8) = 50.f;
+    m_regularTrail->m_fMaxSeg = 50.f;
     m_parentLayer->addChild(m_regularTrail);
 
     m_shipStreakType = static_cast<ShipStreak>(gameManager->m_playerShipFire.value());
@@ -3776,8 +3765,7 @@ void REPlayerObject::spiderTestJump(bool dynamic) {
         m_gameLayer->gameEventTriggered(GJGameEvent::SpiderTeleport, 0, m_uniqueID);
     }
 
-    bool isCubeLike = !m_isShip && !m_isBird && !m_isDart && !m_isSwing && !m_isBall && !m_isSpider;
-    if (!isCubeLike) return;
+    if (!isInBasicMode()) return;
 
     float rotation = 0.f;
 
@@ -4843,7 +4831,7 @@ void REPlayerObject::toggleVisibility(bool visible) {
     setVisible(visible);
 
     if (!visible) {
-        stopActionByTag(0xB);
+        stopActionByTag(11);
 
         m_regularTrail->stopStroke();
 
@@ -4860,9 +4848,7 @@ void REPlayerObject::toggleVisibility(bool visible) {
         return;
     }
 
-    bool alwaysUsesStreak = m_isShip || m_isBird || m_isDart || m_isSwing;
-
-    if (alwaysUsesStreak) {
+    if (isFlying()) {
         resetStreak();
         activateStreak();
         m_trailingParticles->resetSystem();
